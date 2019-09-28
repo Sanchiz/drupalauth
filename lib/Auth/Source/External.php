@@ -111,9 +111,13 @@ class External extends Source
     /**
      * Retrieve attributes for the user.
      *
+     * @param bool $throw_on_invalid_cookie
+     *   (Optional) By default (TRUE), an invalid cookie value will cause an
+     *   exception to be thrown. FALSE will just return NULL instead.
+     *
      * @return array|NULL  The user's attributes, or NULL if the user isn't authenticated.
      */
-    private function getUser()
+    private function getUser($throw_on_invalid_cookie = true)
     {
 
         $drupaluid = null;
@@ -129,7 +133,7 @@ class External extends Source
             if ((isset($hash) && !empty($hash)) && (isset($uid) && !empty($uid))) {
                 // Make sure no one manipulated the hash or the uid in the cookie before we trust the uid
                 $cookie_salt = $this->config->getCookieSalt();
-                if (sha1($cookie_salt . $uid) !== $hash) {
+                if (sha1($cookie_salt . $uid) !== $hash && $throw_on_invalid_cookie) {
                     throw new Exception(
                         'Cookie hash invalid. This indicates either tampering or an out of date drupal4ssp module.'
                     );
@@ -169,7 +173,15 @@ class External extends Source
     {
         assert(is_array($state));
 
-        $attributes = $this->getUser();
+        // Get user. If at this point a cookie is still present (which once was
+        // set by the drupal module), this may be from an older login attempt
+        // to another site that was terminated halfway. So if it's invalid,
+        // delete the cookie and continue to the Drupal site for authentication
+        // (rather than throwing an exception, which would likely make
+        // SimpleSAMLphp redirect back to the SP with the exception message at
+        // this point, meaning any login attempts would fail until the cookie
+        // was deleted manually).
+        $attributes = $this->getUser(true);
         if ($attributes !== null) {
             /*
              * The user is already authenticated.
